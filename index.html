@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Университет ДЗ</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root { --main: #38bdf8; --bg: #0f172a; --card: #1e293b; --text: #f1f5f9; }
+        body { font-family: sans-serif; background: var(--bg); color: var(--text); margin: 0; padding-bottom: 70px; }
+        .page { display: none; padding: 20px; animation: fadeIn 0.3s; }
+        .page.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* Навигация */
+        .nav { position: fixed; bottom: 0; width: 100%; background: var(--card); display: flex; border-top: 1px solid #334155; }
+        .nav-item { flex: 1; text-align: center; padding: 15px 0; font-size: 12px; opacity: 0.6; }
+        .nav-item.active { opacity: 1; color: var(--main); border-top: 2px solid var(--main); }
+
+        /* Карточки */
+        .card { background: var(--card); border-radius: 12px; padding: 15px; margin-bottom: 15px; border: 1px solid #334155; }
+        .badge { background: var(--main); color: var(--bg); padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; }
+        
+        /* Кнопки и инпуты */
+        input, textarea, select { width: 100%; background: #0f172a; border: 1px solid #334155; color: white; padding: 12px; border-radius: 8px; margin: 10px 0; box-sizing: border-box; }
+        .btn { background: var(--main); color: var(--bg); border: none; padding: 15px; border-radius: 10px; width: 100%; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div id="hw" class="page active">
+        <h2>Домашние задания</h2>
+        <div id="hw-list">Загрузка...</div>
+        <button id="add-btn" class="btn" style="display:none; margin-top:20px;" onclick="showAddForm()">➕ Добавить задание</button>
+    </div>
+
+    <div id="profile" class="page">
+        <h2>Мой профиль</h2>
+        <div class="card">
+            <p>👤 Имя: <span id="user-name"></span></p>
+            <p>👥 Группа: <span id="user-group"></span></p>
+            <p>🎖 Роль: <span id="user-role"></span></p>
+            <p>📅 Семестр: <span id="user-sem"></span></p>
+        </div>
+    </div>
+
+    <div id="support" class="page">
+        <h2>Поддержка</h2>
+        <p>Напишите ваш вопрос админу:</p>
+        <textarea id="support-text" rows="5" placeholder="Опишите проблему..."></textarea>
+        <button class="btn" onclick="sendSupport()">Отправить</button>
+    </div>
+
+    <div id="add-form" class="page">
+        <h2>Новое задание</h2>
+        <select id="sub-select"></select>
+        <textarea id="task-text" rows="5" placeholder="Текст задания..."></textarea>
+        <button class="btn" onclick="submitHW()">Опубликовать</button>
+        <button class="btn" style="background:gray; margin-top:10px;" onclick="switchTab('hw')">Отмена</button>
+    </div>
+
+    <div class="nav">
+        <div class="nav-item active" onclick="switchTab('hw')">📚 Задания</div>
+        <div class="nav-item" onclick="switchTab('profile')">👤 Профиль</div>
+        <div class="nav-item" onclick="switchTab('support')">🆘 Помощь</div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        const API_URL = "https://твой-ngrok-адрес.ngrok-free.app"; // ЗАМЕНИТЬ
+        let userData = {};
+
+        async function init() {
+            tg.ready();
+            tg.expand();
+            const uid = tg.initDataUnsafe.user.id;
+            
+            // 1. Загрузка профиля
+            const res = await fetch(`${API_URL}/api/profile/${uid}`);
+            userData = await res.json();
+            
+            document.getElementById('user-name').innerText = tg.initDataUnsafe.user.first_name;
+            document.getElementById('user-group').innerText = userData.group;
+            document.getElementById('user-role').innerText = userData.role;
+            document.getElementById('user-sem').innerText = userData.semester;
+
+            // 2. Если староста — показываем кнопку добавления
+            if(['Староста', 'Админ', 'Помощник'].includes(userData.role)) {
+                document.getElementById('add-btn').style.display = 'block';
+                loadDisciplines();
+            }
+            loadHW();
+        }
+
+        async function loadHW() {
+            const res = await fetch(`${API_URL}/api/homework/${tg.initDataUnsafe.user.id}`);
+            const data = await res.json();
+            const list = document.getElementById('hw-list');
+            list.innerHTML = data.length ? '' : 'Заданий пока нет.';
+            data.forEach(h => {
+                list.innerHTML += `<div class="card"><span class="badge">${h.subject}</span><p>${h.task}</p><small>${h.date}</small></div>`;
+            });
+        }
+
+        async function loadDisciplines() {
+            const res = await fetch(`${API_URL}/api/disciplines?plan_id=${userData.plan_id}&semester=${userData.semester}`);
+            const subs = await res.json();
+            const sel = document.getElementById('sub-select');
+            subs.forEach(s => sel.innerHTML += `<option>${s}</option>`);
+        }
+
+        async function submitHW() {
+            const task = document.getElementById('task-text').value;
+            const subject = document.getElementById('sub-select').value;
+            await fetch(`${API_URL}/api/homework/add`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ user_id: tg.initDataUnsafe.user.id, subject, task })
+            });
+            switchTab('hw');
+            loadHW();
+        }
+
+        async function sendSupport() {
+            const text = document.getElementById('support-text').value;
+            await fetch(`${API_URL}/api/support`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ user_id: tg.initDataUnsafe.user.id, text })
+            });
+            tg.showAlert("Сообщение отправлено админу!");
+            document.getElementById('support-text').value = '';
+        }
+
+        function switchTab(id) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            // Логика подсветки кнопок меню...
+        }
+
+        function showAddForm() { switchTab('add-form'); }
+
+        init();
+    </script>
+</body>
+</html>
