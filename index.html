@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KuzSTU Portal</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #0f172a; color: white; padding: 20px; }
+        .card { background: #1e293b; padding: 15px; border-radius: 12px; margin-bottom: 10px; border: 1px solid #334155; }
+        .btn { background: #38bdf8; color: #0f172a; border: none; padding: 12px; border-radius: 8px; width: 100%; font-weight: bold; cursor: pointer; }
+        input, textarea { width: 100%; padding: 10px; margin: 10px 0; border-radius: 5px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div id="main-view">
+        <h2>Задания группы <span id="group-name">...</span></h2>
+        <div id="hw-list">Загрузка данных из БД...</div>
+        <button id="add-btn" class="btn hidden" onclick="showForm()">➕ Добавить задание</button>
+    </div>
+
+    <div id="form-view" class="hidden">
+        <h3>Добавить в базу данных</h3>
+        <input type="text" id="subject" placeholder="Название предмета">
+        <textarea id="task" rows="5" placeholder="Описание задания"></textarea>
+        <button class="btn" onclick="sendData()">💾 Сохранить в БД</button>
+        <button onclick="showMain()" style="background:none; border:none; color:gray; width:100%; margin-top:10px;">Отмена</button>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        // ВАЖНО: Сюда вставь ссылку от ngrok, которую даст твой запущенный main.py
+        const API_BASE = "https://твой-адрес-ngrok.ngrok-free.app"; 
+        let user = {};
+
+        async function init() {
+            tg.ready();
+            const uid = tg.initDataUnsafe.user?.id || 1838516141; // ID пользователя из ТГ
+
+            // Получаем информацию о пользователе из базы через API
+            const res = await fetch(`${API_BASE}/api/user/${uid}`);
+            user = await res.json();
+            user.id = uid;
+
+            document.getElementById('group-name').innerText = user.group;
+            
+            // Если роль позволяет — показываем кнопку записи в базу
+            if(['Староста', 'Админ', 'Помощник'].includes(user.role)) {
+                document.getElementById('add-btn').classList.remove('hidden');
+            }
+            loadHW();
+        }
+
+        async function loadHW() {
+            const res = await fetch(`${API_BASE}/api/homework/${user.id}`);
+            const data = await res.json();
+            const list = document.getElementById('hw-list');
+            list.innerHTML = data.length ? '' : 'В базе пока нет заданий.';
+            data.forEach(h => {
+                list.innerHTML += `<div class="card"><b>${h.subject}</b><p>${h.task}</p></div>`;
+            });
+        }
+
+        async function sendData() {
+            const subject = document.getElementById('subject').value;
+            const task = document.getElementById('task').value;
+
+            // ОТПРАВЛЯЕМ ДАННЫЕ В PYTHON ДЛЯ ЗАПИСИ В БД
+            await fetch(`${API_BASE}/api/homework/add`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    user_id: user.id,
+                    group: user.group,
+                    semester: user.semester,
+                    subject: subject,
+                    task: task
+                })
+            });
+
+            tg.showAlert("Данные успешно сохранены в университетскую базу!");
+            showMain();
+            loadHW();
+        }
+
+        function showForm() { document.getElementById('main-view').classList.add('hidden'); document.getElementById('form-view').classList.remove('hidden'); }
+        function showMain() { document.getElementById('main-view').classList.remove('hidden'); document.getElementById('form-view').classList.add('hidden'); }
+
+        init();
+    </script>
+</body>
+</html>
